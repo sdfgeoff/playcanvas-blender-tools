@@ -44,8 +44,9 @@ ob_list = []
 mat_list = []
 
 def start():
+    print('------ new run ------')
     export_model()
-    #export_material()
+    print("Done")
 
 
 def export_model():
@@ -77,8 +78,7 @@ def export_model():
     
     mapping_output = {"mapping":[], "area":0}
 
-    print('------ new run ------')
-
+    
       
     for ob in bpy.context.selected_objects:
         nodedict = {'name':ob.name,
@@ -106,9 +106,6 @@ def export_model():
             parent = 0
         output['model']['parents'].append(parent)
         
-        
-        
-        
         #Mesh Gubbage
         if ob.type == 'MESH':
             mesh_num = mesh_list.index(ob.data.name)
@@ -124,7 +121,7 @@ def export_model():
             bm = bmesh.new()
             #Apply modifiers and triangulate.
             bm.from_mesh(ob.to_mesh(scene=bpy.context.scene, apply_modifiers=True, settings='PREVIEW'))
-            bmesh.ops.triangulate(bm, faces=bm.faces, quad_method=1,ngon_method=1) #The 1's are undocumented quad_method and ngon_methodW
+            bmesh.ops.triangulate(bm, faces=bm.faces, quad_method=1,ngon_method=1)
             
             #Store vertex and UV information
             numverts = len(bm.verts)
@@ -156,9 +153,7 @@ def export_model():
                     vertnormallist[3*vert.index+2] = vert.normal.z
                     
             #Link faces to vertices
-            #facedata = ob.data.polygons.items()
             for face in bm.faces:
-                #print(list(face[1].vertices))
                 for vert in face.verts:
                     indices.append(vert.index)
             
@@ -198,6 +193,7 @@ def export_model():
         f.write(json.dumps(mapping_output))
 
 def exportMat(mat):
+    #See http://www.blender.org/api/blender_python_api_2_76_2/bpy.types.Material.html#bpy.types.Material
     mat_output = {"mapping_format": "path"}
     
     #Basic Material Properties:
@@ -209,7 +205,7 @@ def exportMat(mat):
     for tex in mat.texture_slots:
         if tex == None or tex.texture.type != 'IMAGE':
             continue
-        
+        #See http://www.blender.org/api/blender_python_api_2_76_2/bpy.types.TextureSlot.html#bpy.types.TextureSlot.texture
         old_image_path = tex.texture.image.filepath
         
         image_name = tex.name+'.'+old_image_path.split('.')[-1]
@@ -218,6 +214,7 @@ def exportMat(mat):
         #Copy file:
         print("Copying image to: "+image_path)
         shutil.copy2(old_image_path, abs_image_path)
+        
         if tex.use_map_color_diffuse:
             mat_output['diffuseMap'] = '../'+image_path
         if tex.use_map_emission:
@@ -230,4 +227,4 @@ def exportMat(mat):
         f.write(json.dumps(mat_output))
 
 start()
-print("Done")
+
