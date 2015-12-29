@@ -3,11 +3,9 @@ This file attempts to export a playcanas scene. It will export
 pretty much everything:
     - meshes
     - mesh instances
-    - lights?
+    - lights
     - empties
     - parenting
-
-I plan to support:
     - simple materials
     - image materials
      
@@ -27,10 +25,11 @@ It will produce some files:
     and any materials/textures (hopefully)
      '''
      
-NAME = 'test1'
+NAME = 'Dukebox'
 PATH = './'
 MAT_PATH = './materials'
 IMAGE_PATH = './images'
+EXTRAS_NAME = 'leveldata'
     
      
 import bpy
@@ -38,21 +37,56 @@ import bmesh
 import json
 import os
 import shutil
+import math
+import mathutils
 
 mesh_list = []      #In the json, a mesh is stored by index. In blender to tell if they share a mesh, we have to compare their names
 ob_list = []
 mat_list = []
+lamp_list = []
+empty_list = []
 
 def start():
     print('------ new run ------')
     export_model()
+    export_materials()
+    export_extras()
     print("Done")
 
+def export_materials():
+    for mat in mat_list:
+        exportMat(mat)
+
+def export_extras():
+    out_extras = {'lamps':[], 'empties':[]}
+    for lamp in lamp_list:
+        lamp_data = {}
+        lamp_data['type'] = lamp.data.type.lower()
+        lamp_data['loc'] = list(lamp.location)
+        lamp_data['color'] = list(lamp.data.color)
+        lamp_data['energy'] = lamp.data.energy
+        lamp_data['distance'] = lamp.data.distance
+        if lamp.data.type != 'POINT':
+            lamp_data['rot'] = list(mathutils.Vector(ob.rotation_euler) * 180/math.pi)
+        if lamp.data.type == 'SPOT':
+            lamp_data['blend'] = lamp.data.spot_blend
+            lamp_data['angle'] = lamp.data.spot_size
+        out_extras['lamps'].append(lamp_data)
+        
+    for empty in empty_list:
+        empty_data = {}
+        empty_data['type'] = empty.empty_draw_type.lower()
+        empty_data['rot'] = list(empty.rotation_euler)
+        empty_data['loc'] = list(empty.location)
+        out_extras['empties'].append(empty_data)
+        print(empty_data)
+    
+    with open(bpy.path.abspath('//')+'/'+EXTRAS_NAME+'.json', 'w') as f:
+        f.write(json.dumps(out_extras))
+    
+            
 
 def export_model():
-    global mesh_list
-    global obj_list
-    global mat_list
     
     try:
         os.makedirs(bpy.path.abspath('//')+MAT_PATH)
@@ -83,9 +117,10 @@ def export_model():
     for ob in bpy.context.selected_objects:
         nodedict = {'name':ob.name,
                     'position': list(ob.location), #Relative to parent
-                    'rotation': list(ob.delta_rotation_euler),
-                    'scale':list(ob.delta_scale),
+                    'rotation': list(mathutils.Vector(ob.rotation_euler) * 180/math.pi),
+                    'scale':list(ob.scale),
                     }
+        print(ob.rotation_euler)
 
         output['model']['nodes'].append(nodedict)
         ob_list.append(ob.name)
@@ -93,9 +128,10 @@ def export_model():
             mesh_list.append(ob.data.name)
             mapping_output['mapping'].append({"path":MAT_PATH+"/"+ob.active_material.name+".json"})
             mat_list.append(ob.active_material)
-    
-    for mat in mat_list:
-        exportMat(mat)
+        elif ob.type == 'LAMP':
+            lamp_list.append(ob)
+        elif ob.type == 'EMPTY':
+            empty_list.append(ob)
             
     for ob in bpy.context.selected_objects:
         
@@ -111,7 +147,7 @@ def export_model():
             mesh_num = mesh_list.index(ob.data.name)
             ob_num = ob_list.index(ob.name)
             output['model']['meshInstances'].append({
-                                    'node':ob_num,
+                                    'node':ob_num+1,
                                     'mesh':mesh_num,})
             
             indices = []
@@ -206,12 +242,13 @@ def exportMat(mat):
         if tex == None or tex.texture.type != 'IMAGE':
             continue
         #See http://www.blender.org/api/blender_python_api_2_76_2/bpy.types.TextureSlot.html#bpy.types.TextureSlot.texture
-        old_image_path = tex.texture.image.filepath
+        old_image_path = bpy.path.abspath('//')+tex.texture.image.filepath
         
         image_name = tex.name+'.'+old_image_path.split('.')[-1]
         image_path = IMAGE_PATH+'/'+image_name
         abs_image_path = bpy.path.abspath('//')+image_path
         #Copy file:
+        print(old_image_path)
         print("Copying image to: "+image_path)
         shutil.copy2(old_image_path, abs_image_path)
         
@@ -225,6 +262,9 @@ def exportMat(mat):
     
     with open(bpy.path.abspath('//')+MAT_PATH+'/'+mat.name+'.json', 'w') as f:
         f.write(json.dumps(mat_output))
+
+def getLocation(pos):
+    return list(pos/2)
 
 start()
 
