@@ -229,7 +229,7 @@ def generate_instance_data(mesh_list):
 def export_material(mat, mat_path, img_path):
     '''Exports a single material'''
     mat_output = {"mapping_format": "path"}
-
+    mat_output['name'] = mat.name
     # Basic Material Properties:
     mat_output['diffuse'] = list(mat.diffuse_color)
     mat_output['specular'] = list(mat.specular_color * mat.specular_intensity)
@@ -250,6 +250,9 @@ def export_material(mat, mat_path, img_path):
             mat_output['emissiveMap'] = os.path.relpath(image_path, mat_path)
         if tex.use_map_color_spec:
             mat_output['specularMap'] = os.path.relpath(image_path, mat_path)
+        
+    if not mat.game_settings.use_backface_culling:
+        mat_output['cull'] = 0
 
     with open(bpy.path.abspath('//')+mat_path+'/'+mat.name+'.json', 'w') as output_file:
         output_file.write(json.dumps(mat_output))
