@@ -195,7 +195,7 @@ def generate_node_data(mesh_list):
     for mesh in mesh_list:
         for instance in mesh[2]:
             if instance.parent is not None and instance.parent.name in node_name_list:
-                parent_list.append(node_name_list.index(instance.parent.name))
+                parent_list.append(node_name_list.index(instance.parent.name)+1)
             else:
                 parent_list.append(0)
 
