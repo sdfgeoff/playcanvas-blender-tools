@@ -286,6 +286,8 @@ def generate_material_list(obj_list):
     for obj in obj_list:
         for mat in obj.data.materials:
             materials.add(mat)
+        if len(obj.data.materials) == 0:
+            print("Warning: {} has no material and may not export correctly".format(obj.name))
     return list(materials)
 
 
@@ -302,6 +304,12 @@ def generate_mesh_list(ob_list):
                 raw_meshes[ob.data.name] = [ob]
             else:
                 raw_meshes[ob.data.name].append(ob)
+            
+            uv_layer_name_list = [l.name for l in ob.data.uv_layers]
+            for uv_name in uv_layer_name_list:
+                if not uv_name.isdigit():
+                    print("UV layer name is not a number. UV layers may export incorrectly")
+
     mesh_list = list()
     for mesh_name in raw_meshes:
         # Split the meshes by material and convert them to bmesh
