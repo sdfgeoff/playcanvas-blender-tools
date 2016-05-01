@@ -46,6 +46,7 @@ def prepare_meshes(mesh_list):
         bmesh.ops.triangulate(mesh[1], faces=mesh[1].faces)
         #bmesh.ops.split_edges(mesh[1], edges=mesh[1].edges)
 
+
 def export_mappings(mapping_list, file_path, mesh_path, mat_path):
     output = {'mapping':list()}
     for mesh_map in mapping_list:
@@ -59,6 +60,7 @@ def export_mappings(mapping_list, file_path, mesh_path, mat_path):
     new_mesh_path = os.path.join(os.path.dirname(file_path), mesh_path, file_name)
     with open(new_mesh_path, 'w') as out_file:
         out_file.write(json.dumps(output))
+
 
 def export_meshes(mesh_list, file_path, mesh_path):
     node_data, parents = generate_node_data(mesh_list)
@@ -90,6 +92,7 @@ def export_meshes(mesh_list, file_path, mesh_path):
         
     return mapping_list
 
+
 def generate_vertex_data(mesh_list):
     '''returns a playcanvas compatible list of vertex positions and normals'''
     vert_list = list()
@@ -99,6 +102,7 @@ def generate_vertex_data(mesh_list):
         vert_list.append(extract_vert_data(mesh))
     print('')
     return vert_list
+
 
 def extract_vert_data(mesh_data):
     '''Cretes a playcanvas compatible dict of vertex positions, normals, uv-maps etc '''
@@ -136,6 +140,7 @@ def extract_vert_data(mesh_data):
         }
     return vert_dict
 
+
 def generate_mesh_data(mesh_list):
     '''returns a playcanvas compatible dict of what vertex id's make up faces'''
     mesh_data_list = list()
@@ -145,6 +150,7 @@ def generate_mesh_data(mesh_list):
         mesh_data_list.append(extract_mesh_data(mesh, mesh_list))
     print('')
     return mesh_data_list
+
 
 def extract_mesh_data(mesh_data, mesh_list):
     mesh_name, mesh, instances = mesh_data
@@ -183,6 +189,7 @@ def extract_mesh_data(mesh_data, mesh_list):
     
     return mesh_dict
 
+
 def generate_node_data(mesh_list):
     '''returns a playcanvas compatible list of positions and locations of the various nodes'''
     node_data = list()
@@ -212,6 +219,7 @@ def generate_node_data(mesh_list):
 
     return node_data, parent_list
 
+
 def generate_instance_data(mesh_list):
     '''returns a playcanvas compatible list linking meshes to instances'''
     instance_data = list()
@@ -234,6 +242,7 @@ def generate_instance_data(mesh_list):
             node_id += 1
     print('')
     return instance_data, mapping_list
+
 
 def export_material(mat, mat_path, img_path):
     '''Exports a single material'''
@@ -266,6 +275,7 @@ def export_material(mat, mat_path, img_path):
     with open(bpy.path.abspath('//')+mat_path+'/'+mat.name+'.json', 'w') as output_file:
         output_file.write(json.dumps(mat_output))
 
+
 def copy_image(tex, img_path):
     '''Copies an image from a texture to the specified path, returning the new file path'''
     old_path = bpy.path.abspath(tex.texture.image.filepath)
@@ -278,6 +288,7 @@ def copy_image(tex, img_path):
     
     return image_path
 
+
 def export_materials(mat_list, mat_path, img_path):
     '''Exports a list of materials'''
     for mat in mat_list:
@@ -286,6 +297,7 @@ def export_materials(mat_list, mat_path, img_path):
         print("Exporting materials:    {:3}%".format(int(mat_percent*100), mat.name), end='\r')
         export_material(mat, mat_path, img_path)
     print("")
+
 
 def generate_material_list(obj_list):
     '''Genreates a list of materials from a list of passed in objects'''
@@ -296,6 +308,7 @@ def generate_material_list(obj_list):
         if len(obj.data.materials) == 0:
             print("Warning: {} has no material and may not export correctly".format(obj.name))
     return list(materials)
+
 
 def generate_mesh_list(ob_list):
     '''Generates a list of meshes. Splits meshes into ones with single-materials
@@ -323,6 +336,7 @@ def generate_mesh_list(ob_list):
         meshes = separate_mesh_by_material(mesh, raw_meshes[mesh_name])
         mesh_list += meshes
     return mesh_list
+
 
 def separate_mesh_by_material(mesh, ob):
     '''Returns a list of b-mesh meshes separating a mesh by material.
