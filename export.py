@@ -1,3 +1,19 @@
+bl_info = {
+    "name": "Export Playcanavs (.json)",
+    "author": "sdfgeoff",
+    "version": (1, 1),
+    "blender": (2, 71, 0),
+    "location": "File > Export > Playcanvas (.json)",
+    "description": "Export Playcanavs (.json)",
+    "warning": "",
+    "wiki_url": "",
+    "category": "Import-Export"}
+
+"""
+
+
+"""
+
 import os
 import json
 import math
@@ -8,7 +24,7 @@ import bmesh
 import mathutils
 
 
-def write_some_data(context, filepath, mesh_path, mat_path, img_path):
+def do_export(context, filepath, mesh_path, mat_path, img_path):
     print('------------')
     make_directories([mesh_path, mat_path, img_path])
     
@@ -29,7 +45,7 @@ def prepare_meshes(mesh_list):
     for mesh in mesh_list:
         bmesh.ops.triangulate(mesh[1], faces=mesh[1].faces)
         #bmesh.ops.split_edges(mesh[1], edges=mesh[1].edges)
-        
+
 def export_mappings(mapping_list, file_path, mesh_path, mat_path):
     output = {'mapping':list()}
     for mesh_map in mapping_list:
@@ -43,7 +59,6 @@ def export_mappings(mapping_list, file_path, mesh_path, mat_path):
     new_mesh_path = os.path.join(os.path.dirname(file_path), mesh_path, file_name)
     with open(new_mesh_path, 'w') as out_file:
         out_file.write(json.dumps(output))
-
 
 def export_meshes(mesh_list, file_path, mesh_path):
     node_data, parents = generate_node_data(mesh_list)
@@ -75,7 +90,6 @@ def export_meshes(mesh_list, file_path, mesh_path):
         
     return mapping_list
 
-
 def generate_vertex_data(mesh_list):
     '''returns a playcanvas compatible list of vertex positions and normals'''
     vert_list = list()
@@ -85,7 +99,6 @@ def generate_vertex_data(mesh_list):
         vert_list.append(extract_vert_data(mesh))
     print('')
     return vert_list
-
 
 def extract_vert_data(mesh_data):
     '''Cretes a playcanvas compatible dict of vertex positions, normals, uv-maps etc '''
@@ -123,7 +136,6 @@ def extract_vert_data(mesh_data):
         }
     return vert_dict
 
-
 def generate_mesh_data(mesh_list):
     '''returns a playcanvas compatible dict of what vertex id's make up faces'''
     mesh_data_list = list()
@@ -133,7 +145,6 @@ def generate_mesh_data(mesh_list):
         mesh_data_list.append(extract_mesh_data(mesh, mesh_list))
     print('')
     return mesh_data_list
-
 
 def extract_mesh_data(mesh_data, mesh_list):
     mesh_name, mesh, instances = mesh_data
@@ -201,7 +212,6 @@ def generate_node_data(mesh_list):
 
     return node_data, parent_list
 
-
 def generate_instance_data(mesh_list):
     '''returns a playcanvas compatible list linking meshes to instances'''
     instance_data = list()
@@ -224,7 +234,6 @@ def generate_instance_data(mesh_list):
             node_id += 1
     print('')
     return instance_data, mapping_list
-
 
 def export_material(mat, mat_path, img_path):
     '''Exports a single material'''
@@ -268,7 +277,6 @@ def copy_image(tex, img_path):
     shutil.copy2(old_path, abs_image_path)
     
     return image_path
-    
 
 def export_materials(mat_list, mat_path, img_path):
     '''Exports a list of materials'''
@@ -278,7 +286,6 @@ def export_materials(mat_list, mat_path, img_path):
         print("Exporting materials:    {:3}%".format(int(mat_percent*100), mat.name), end='\r')
         export_material(mat, mat_path, img_path)
     print("")
-        
 
 def generate_material_list(obj_list):
     '''Genreates a list of materials from a list of passed in objects'''
@@ -289,7 +296,6 @@ def generate_material_list(obj_list):
         if len(obj.data.materials) == 0:
             print("Warning: {} has no material and may not export correctly".format(obj.name))
     return list(materials)
-
 
 def generate_mesh_list(ob_list):
     '''Generates a list of meshes. Splits meshes into ones with single-materials
@@ -317,7 +323,6 @@ def generate_mesh_list(ob_list):
         meshes = separate_mesh_by_material(mesh, raw_meshes[mesh_name])
         mesh_list += meshes
     return mesh_list
-
 
 def separate_mesh_by_material(mesh, ob):
     '''Returns a list of b-mesh meshes separating a mesh by material.
@@ -350,14 +355,13 @@ def separate_mesh_by_material(mesh, ob):
     
     return mesh_list
 
-
 def make_directories(dir_list):
     '''Creates the listed directories if they do not exist'''
     for dir in dir_list:
         if not os.path.isdir(bpy.path.abspath('//')+dir):
             os.makedirs(bpy.path.abspath('//')+dir)
 
-                
+
 ############################# BLENDER UI THINGS ##################################
 
 
@@ -401,22 +405,22 @@ class ExportPlaycanvas(Operator, ExportHelper):
             )
 
     def execute(self, context):
-        return write_some_data(context, self.filepath, self.mesh_path, self.mat_path, self.image_path)
+        return do_export(context, self.filepath, self.mesh_path, self.mat_path, self.image_path)
 
 
 # Only needed if you want to add into a dynamic menu
-def menu_func_export(self, context):
+def menu_func(self, context):
     self.layout.operator(ExportPlaycanvas.bl_idname, text="Export Playcanvas (.json)")
 
 
 def register():
-    bpy.utils.register_class(ExportPlaycanvas)
-    bpy.types.INFO_MT_file_export.append(menu_func_export)
+    bpy.utils.register_module(__name__)
+    bpy.types.INFO_MT_file_export.append(menu_func)
 
 
 def unregister():
-    bpy.utils.unregister_class(ExportPlaycanvas)
-    bpy.types.INFO_MT_file_export.remove(menu_func_export)
+    bpy.utils.unregister_module(__name__)
+    bpy.types.INFO_MT_file_export.remove(menu_func)
 
 
 if __name__ == "__main__":
