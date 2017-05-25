@@ -27,9 +27,13 @@ import mathutils
 def do_export(context, filepath, mesh_path, mat_path, img_path):
     print('------------')
     make_directories([mesh_path, mat_path, img_path])
-    
+
     print("Preparing Scene:        ....", end='\r')
-    ob_list = bpy.context.selected_objects
+    if context is not None:
+        ob_list = bpy.context.selected_objects
+    else:
+        ob_list = bpy.data.objects
+
     mesh_list = generate_mesh_list(ob_list)
     prepare_meshes(mesh_list)
     mat_list = generate_material_list(ob_list)
@@ -55,7 +59,7 @@ def export_mappings(mapping_list, file_path, mesh_path, mat_path):
         mat_name = mesh_map[2][0].data.materials[mat_id].name
         new_mat_path = os.path.join(os.path.relpath(mat_path, mesh_path), mat_name+'.json')
         output['mapping'].append({'path':new_mat_path})
-        
+
     file_name = os.path.split(file_path)[1].replace('.', '.mapping.')
     new_mesh_path = os.path.join(os.path.dirname(file_path), mesh_path, file_name)
     with open(new_mesh_path, 'w') as out_file:
@@ -87,9 +91,9 @@ def export_meshes(mesh_list, file_path, mesh_path):
     }
     file_name = os.path.split(file_path)[1]
     new_mesh_path = os.path.join(os.path.dirname(file_path), mesh_path, file_name)
-    with open(new_mesh_path, 'w') as out_file:
+    with open(new_mesh_path, 'w+') as out_file:
         out_file.write(json.dumps(output))
-        
+
     return mapping_list
 
 
@@ -108,7 +112,7 @@ def extract_vert_data(mesh_data):
     '''Cretes a playcanvas compatible dict of vertex positions, normals, uv-maps etc '''
     mesh_name, mesh, instances = mesh_data
     uv_lay = mesh.loops.layers.uv.active
-    
+
     numverts = len(mesh.verts)
     vertposlist = numverts*3*[None]
     vertnormallist = numverts*3*[None]
@@ -133,7 +137,7 @@ def extract_vert_data(mesh_data):
                 'position': {'type': 'float32', 'components': 3, 'data': vertposlist},
                 'normal': {'type': 'float32', 'components': 3, 'data': vertnormallist},
                 }
-                
+
     if uv_lay is not None:
         vert_dict['texCoord0'] = {
             'type': 'float32', 'components': 2, 'data': uvdata
@@ -155,16 +159,16 @@ def generate_mesh_data(mesh_list):
 def extract_mesh_data(mesh_data, mesh_list):
     mesh_name, mesh, instances = mesh_data
     vertices = mesh_list.index(mesh_data)  # Where the vertex data is in the mesh_list
-    
+
     indices = list()  # What vertices make up a face
     for face in mesh.faces:
         for vert in face.verts:
             indices.append(vert.index)
-    
+
     typ = 'triangles'
     base = 0
     count = len(indices)
-    
+
     minpos = [float('inf'), float('inf'), float('inf')].copy()
     maxpos = [float('inf'), float('inf'), float('inf')].copy()
     for face in mesh.faces:
@@ -176,8 +180,8 @@ def extract_mesh_data(mesh_data, mesh_list):
             maxpos[0] = max(vert.co.x, minpos[0])
             maxpos[1] = max(vert.co.y, minpos[1])
             maxpos[2] = max(vert.co.z, minpos[2])
-    
-    
+
+
     mesh_dict = {
                 'aabb': {'min': minpos, 'max': maxpos},
                 'vertices': vertices,
@@ -186,7 +190,7 @@ def extract_mesh_data(mesh_data, mesh_list):
                 'base': base,
                 'count': count
                 }
-    
+
     return mesh_dict
 
 
@@ -198,7 +202,7 @@ def generate_node_data(mesh_list):
     for mesh in mesh_list:
         percent = (mesh_list.index(mesh)+1) / len(mesh_list)
         print("Generating Node Data    {:3}%".format(int(percent*100)), end='\r')
-        
+
         for instance in mesh[2]:
             node_dict = {
                 'name': instance.name,
@@ -208,7 +212,7 @@ def generate_node_data(mesh_list):
             }
             node_data.append(node_dict)
     print('')
-    
+
     node_name_list = [n['name'] for n in node_data]
     for mesh in mesh_list:
         for instance in mesh[2]:
@@ -228,7 +232,7 @@ def generate_instance_data(mesh_list):
     for mesh in mesh_list:
         percent = (mesh_list.index(mesh)+1) / len(mesh_list)
         print("Generating Node Data    {:3}%".format(int(percent*100)), end='\r')
-        
+
         for instance in mesh[2]:
 
             mesh_num = mesh_list.index(mesh)
@@ -251,7 +255,7 @@ def export_material(mat, mat_path, img_path):
     # Basic Material Properties:
     mat_output['diffuse'] = list(mat.diffuse_color)
     mat_output['specular'] = list(mat.specular_color * mat.specular_intensity)
-    
+
     if mat.alpha != 1.0:
         mat_output['opacity'] = mat.alpha
     if mat.emit != 0.0:
@@ -268,11 +272,11 @@ def export_material(mat, mat_path, img_path):
             mat_output['emissiveMap'] = os.path.relpath(image_path, mat_path)
         if tex.use_map_color_spec:
             mat_output['specularMap'] = os.path.relpath(image_path, mat_path)
-        
+
     if not mat.game_settings.use_backface_culling:
         mat_output['cull'] = 0
 
-    with open(bpy.path.abspath('//')+mat_path+'/'+mat.name+'.json', 'w') as output_file:
+    with open(get_full_path(mat_path)+'/'+mat.name+'.json', 'w') as output_file:
         output_file.write(json.dumps(mat_output))
 
 
@@ -285,7 +289,7 @@ def copy_image(tex, img_path):
     abs_image_path = os.path.join(bpy.path.abspath('//'),image_path)
     # Copy file:
     shutil.copy2(old_path, abs_image_path)
-    
+
     return image_path
 
 
@@ -303,16 +307,17 @@ def generate_material_list(obj_list):
     '''Genreates a list of materials from a list of passed in objects'''
     materials = set()
     for obj in obj_list:
-        for mat in obj.data.materials:
-            materials.add(mat)
-        if len(obj.data.materials) == 0:
-            print("Warning: {} has no material and may not export correctly".format(obj.name))
+        if obj.type == 'MESH':
+            for mat in obj.data.materials:
+                materials.add(mat)
+            if len(obj.data.materials) == 0:
+                print("Warning: {} has no material and may not export correctly".format(obj.name))
     return list(materials)
 
 
 def generate_mesh_list(ob_list):
     '''Generates a list of meshes. Splits meshes into ones with single-materials
-    
+
     Mesh list is in the form: [('name', bmesh_obj, [instance_list]), ...]
     This is so that the location of multiple instances of objects can be preserved
     '''
@@ -323,7 +328,7 @@ def generate_mesh_list(ob_list):
                 raw_meshes[ob.data.name] = [ob]
             else:
                 raw_meshes[ob.data.name].append(ob)
-            
+
             uv_layer_name_list = [l.name for l in ob.data.uv_layers]
             for uv_name in uv_layer_name_list:
                 if not uv_name.isdigit():
@@ -340,7 +345,7 @@ def generate_mesh_list(ob_list):
 
 def separate_mesh_by_material(mesh, ob):
     '''Returns a list of b-mesh meshes separating a mesh by material.
-    
+
     Returned list is in the form:
         [('mesh_name', bmesh, [instance_list]), ...]'''
     old_mesh = bmesh.new()
@@ -366,15 +371,23 @@ def separate_mesh_by_material(mesh, ob):
         else:
             mesh_name = mesh.name + '.' + mat[1].name
         mesh_list.append((mesh_name, new_mesh, ob))
-    
+
     return mesh_list
 
 def make_directories(dir_list):
     '''Creates the listed directories if they do not exist'''
     for dir in dir_list:
-        if not os.path.isdir(bpy.path.abspath('//')+dir):
-            os.makedirs(bpy.path.abspath('//')+dir)
+        full_path = get_full_path(dir)
+        if not os.path.isdir(full_path):
+            print("Making Directory {}".format(full_path))
+            os.makedirs(full_path)
 
+def get_full_path(slug):
+    '''Makes sure all paths start at the same place'''
+    if slug.startswith('.'):
+        return bpy.path.abspath('//')+slug
+    else:
+        return slug
 
 ############################# BLENDER UI THINGS ##################################
 
