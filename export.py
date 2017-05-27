@@ -300,7 +300,6 @@ class MeshParser(dict):
         self['base'] = 0
 
         self.update_mesh_data()
-        self.update_vertex_data()
 
     def calculate_bounding_box(self):
         '''Get's the mesh extents'''
@@ -324,10 +323,7 @@ class MeshParser(dict):
         for face in self.mesh.faces:
             for vert in face.verts:
                 self['indices'].append(vert.index)
-        self['count'] = len(self['indices'])
 
-    def update_vertex_data(self):
-        '''Extracts normals and UV's'''
         numverts = len(self.mesh.verts)
         vertposlist = numverts*3*[None]
         vertnormallist = numverts*3*[None]
@@ -367,6 +363,8 @@ class MeshParser(dict):
             self.vert_data['texCoord{}'.format(uv_index)] = {
                 'type': 'float32', 'components': 2, 'data': uvdata[uv_name]
             }
+
+        self['count'] = len(self['indices'])
 
 
 def separate_mesh_by_material(mesh, obj):
