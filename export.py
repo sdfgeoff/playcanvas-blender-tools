@@ -63,7 +63,7 @@ def export_mappings(mapping_list, file_path, mesh_path, mat_path):
     file_name = os.path.split(file_path)[1].replace('.', '.mapping.')
     new_mesh_path = os.path.join(os.path.dirname(file_path), mesh_path, file_name)
     with open(new_mesh_path, 'w') as out_file:
-        out_file.write(json.dumps(output))
+        out_file.write(json.dumps(output, indent=4, sort_keys=True))
 
 
 def export_meshes(mesh_list, file_path, mesh_path):
@@ -92,7 +92,7 @@ def export_meshes(mesh_list, file_path, mesh_path):
     file_name = os.path.split(file_path)[1]
     new_mesh_path = os.path.join(os.path.dirname(file_path), mesh_path, file_name)
     with open(new_mesh_path, 'w+') as out_file:
-        out_file.write(json.dumps(output))
+        out_file.write(json.dumps(output, indent=4, sort_keys=True))
 
     return mapping_list
 
@@ -261,8 +261,13 @@ def export_material(mat, mat_path, img_path):
     if mat.emit != 0.0:
         mat_output['emissive'] = list(mat.diffuse_color * mat.emit)
 
-    for tex in mat.texture_slots:
+    for tex_id, tex in enumerate(mat.texture_slots):
         if tex is None or tex.texture.type != 'IMAGE':
+            # Ignore empty texture slots or ones that aren't images
+            continue
+
+        if not mat.use_textures[tex_id]:
+            # Ignore texture slots that are disabled
             continue
         image_path = copy_image(tex, img_path)
 
@@ -272,12 +277,15 @@ def export_material(mat, mat_path, img_path):
             mat_output['emissiveMap'] = os.path.relpath(image_path, mat_path)
         if tex.use_map_color_spec:
             mat_output['specularMap'] = os.path.relpath(image_path, mat_path)
+        if tex.use_map_normal:
+            mat_output['normalMap'] = os.path.relpath(image_path, mat_path)
+            mat_output['bumpMapFactor'] = tex.normal_factor
 
     if not mat.game_settings.use_backface_culling:
         mat_output['cull'] = 0
 
     with open(get_full_path(mat_path)+'/'+mat.name+'.json', 'w') as output_file:
-        output_file.write(json.dumps(mat_output))
+        output_file.write(json.dumps(mat_output, indent=4, sort_keys=True))
 
 
 def copy_image(tex, img_path):
@@ -395,7 +403,7 @@ def get_full_path(slug):
 # ExportHelper is a helper class, defines filename and
 # invoke() function which calls the file selector.
 from bpy_extras.io_utils import ExportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty
+from bpy.props import StringProperty
 from bpy.types import Operator
 
 
