@@ -32,7 +32,7 @@ import bmesh
 import mathutils
 
 
-def do_export(context, file_name, mesh_path, mat_path, img_path, separate_objects=False):
+def do_export(context, path_data, separate_objects=False):
     '''Runs the exporter on the scene. By default it will do selected objects,
     if there context is None it will do all of them. The parameters are:
        - filepath - to the main .json file
@@ -41,13 +41,8 @@ def do_export(context, file_name, mesh_path, mat_path, img_path, separate_object
        - img_path - All textures used will be compied to this folder
        - separate_objects - export parent root objects to separate files or not
     '''
-    make_directories([mesh_path, mat_path, img_path])
-    path_data = {
-        'mesh':mesh_path,
-        'mat':mat_path,
-        'img':img_path,
-        'name':file_name
-    }
+    make_directories([path_data['mat'], path_data['mesh'], path_data['img']])
+
     SceneExporter(context, path_data, separate_objects)
     return {'FINISHED'}
 
@@ -81,11 +76,10 @@ class SceneExporter(object):
                     # Add the root node to the heirachy
                     self.obj_list.append(ObjectHeirachy(obj.name, obj))
 
-        iterate_list_display_progress(
-            [(o, path_data) for o in self.obj_list],
-            HeirachyExporter,
-            'Exporting Heirachy(s)'
-        )
+
+        for counter, heirachy in enumerate(self.obj_list):
+            info("Exporting Heirachy {}/{}".format(counter + 1, len(self.obj_list)))
+            HeirachyExporter(heirachy, path_data)
 
 
 class ObjectHeirachy(object):
@@ -109,27 +103,26 @@ class HeirachyExporter(object):
         self.heirachy = heirachy
 
         self.uv_list = self.generate_uv_list()
-        self.material_list = self.generate_material_list()
-
-        # Materials
-        iterate_list_display_progress(
-            [(m, self.uv_list, path_data) for m in self.material_list],
-            MaterialExporter,
-            "Exporting Material(s)"
-        )
 
         # Meshes
-        mesh_list = self.generate_mesh_list()
+        info("Generating Meshes .....")
+        self.mesh_list = self.generate_mesh_list()
         mesh_data_list = list()
-        for mesh_id, mesh in enumerate(mesh_list):
+        for mesh_id, mesh in enumerate(self.mesh_list):
             mesh_data_list.append(MeshParser(mesh, mesh_id, self.uv_list))
 
+        # TODO: Put in this object at some stage
+        node_data, parents = generate_node_data(self.mesh_list)
+        instance_data = generate_instance_data(self.mesh_list)
 
-        # REPLACE SOON
-        node_data, parents = generate_node_data(mesh_list)
-        instance_data, mapping_list = generate_instance_data(mesh_list)
+        info("Exporting Mappings ...")
+        material_list = self.export_mappings(path_data)
 
+        info("Exporting Materials ...")
+        for mat in material_list:
+            MaterialExporter(mat, self.uv_list, path_data)
 
+        info("Exporting Main file")
         output = {
             'model': {
                 'version': 2,
@@ -141,35 +134,28 @@ class HeirachyExporter(object):
                         "scale": [1, 1, 1],
                     }
                 ] + node_data,
-                'parents': [-1] + parents,     # Parent the root node to the scene
-                'skins': [],         # Something to do with bones and animation
+
+                # Parent the root node to the scene
+                'parents': [-1] + parents,
+
+                # Something to do with bones and animation
+                'skins': [],
 
                 # For each mesh, a collection of vertex positions and normals
                 'vertices': [m.vert_data for m in mesh_data_list],
 
                 # For each mesh, a description of how the vertices fit together
-                'meshes': [m.to_dict() for m in mesh_data_list],
-                'meshInstances': instance_data  # Creating instances of each mesh
+                'meshes': mesh_data_list,
+
+                # What mesh links to what node
+                'meshInstances': instance_data
             }
         }
-        #json.dumps(output, indent=2, sort_keys=True))
-        new_mesh_path = os.path.join(path_data['mesh'], self.heirachy.name + '.json')
-        json.dump(output, open(new_mesh_path, 'w+'), indent=4, sort_keys=True)
-
-        export_mappings(
-            mapping_list,
-            self.heirachy.name,
-            path_data
+        new_mesh_path = os.path.join(
+            path_data['mesh'],
+            self.heirachy.name + '.json'
         )
-
-    def generate_material_list(self):
-        '''Genreates a list of materials from a list of passed in objects'''
-        materials = set()
-        for obj in self.heirachy.objects:
-            if obj.type == 'MESH':
-                for mat in obj.data.materials:
-                    materials.add(mat)
-        return list(materials)
+        json.dump(output, open(new_mesh_path, 'w+'), indent=4, sort_keys=True)
 
     def generate_uv_list(self):
         '''A list that makes sure UV maps end up in the right place'''
@@ -204,44 +190,74 @@ class HeirachyExporter(object):
 
         return mesh_list
 
+    def export_mappings(self, path_data):
+        '''Exports the mapping between meshes and materials'''
+        output = {'mapping': list()}
 
-class MeshParser(object):
+        materials = dict()
+
+        # The mapping list is a list of instances in order of appearance in
+        # the instances list that contains the mesh used. It is essentially
+        # an inversion of mesh_list
+        mapping_list = list()
+        for mesh in self.mesh_list:
+            for _instance in mesh[2]:
+                mapping_list.append(mesh)
+
+        mesh_to_material_path = os.path.relpath(
+            path_data['mat'],
+            path_data['mesh']
+        )
+        for mesh_map in mapping_list:
+            for face in mesh_map[1].faces:
+                mat_id = face.material_index
+                break
+            if mesh_map[2][0].data.materials:
+                # If there is a material in the mesh, export it's path
+                # TODO: In future only export materials here?
+                mat = mesh_map[2][0].data.materials[mat_id]
+                materials[mat.name] = mat
+
+                new_mat_path = os.path.join(
+                    mesh_to_material_path, mat.name+'.json'
+                )
+            else:
+                new_mat_path = "None"
+
+            output['mapping'].append({'path': new_mat_path})
+
+        file_name = os.path.join(
+            path_data['mesh'],
+            self.heirachy.name + '.mapping.json'
+        )
+        json.dump(output, open(file_name, 'w'), indent=4, sort_keys=True)
+
+        return [materials[m] for m in materials]
+
+
+class MeshParser(dict):
     '''Parses a single mesh, and provides access to it's face indices,
     and vertex data'''
     def __init__(self, mesh, id_num, uv_list):
+        super().__init__()
         self.mesh = mesh[1]
         self.uv_list = uv_list
 
         # This isn't really dealt with at this point, and has more to do with
         # when you append all of the vertices together into the vertex list
         # But keeping it the order of the meshes makes sense, and is the easiest
-        self.vertices = id_num
+        self['vertices'] = id_num
 
-        self.indices = None
+        self['indices'] = None
 
-        self.aabb = self.calculate_bounding_box()
+        self['aabb'] = self.calculate_bounding_box()
 
         # These are always the same
-        self.type = 'triangles'
-        self.base = 0
+        self['type'] = 'triangles'
+        self['base'] = 0
 
         self.update_mesh_data()
         self.update_vertex_data()
-
-    @property
-    def count(self):
-        '''Number of face-vertex indices'''
-        return len(self.indices)
-
-    def to_dict(self):
-        return {
-                "aabb": self.aabb,
-                "base": self.base,
-                "count": self.count,
-                "indices": self.indices,
-                "type": self.type,
-                "vertices": self.vertices
-            }
 
     def calculate_bounding_box(self):
         '''Get's the mesh extents'''
@@ -259,29 +275,30 @@ class MeshParser(object):
 
         return {'min': minpos, 'max': maxpos}
 
-
     def update_mesh_data(self):
         '''Converts a mesh into a dict'''
-        self.indices = list()  # What vertices make up a face
+        self['indices'] = list()  # What vertices make up a face
         for face in self.mesh.faces:
             for vert in face.verts:
-                self.indices.append(vert.index)
+                self['indices'].append(vert.index)
+        self['count'] = len(self['indices'])
 
     def update_vertex_data(self):
         '''Extracts normals and UV's'''
         numverts = len(self.mesh.verts)
         vertposlist = numverts*3*[None]
         vertnormallist = numverts*3*[None]
-        uvdata = {i:numverts*2*[None].copy() for i in self.mesh.loops.layers.uv.keys()}
+
+        uv_layers = self.mesh.loops.layers.uv
+        uvdata = {i: numverts*2*[None].copy() for i in uv_layers.keys()}
         for face in self.mesh.faces:
             for loop in face.loops:
                 vert = loop.vert
 
-                uv_layers = self.mesh.loops.layers.uv
                 for uv_lay in uv_layers.keys():
-                    uv = loop[uv_layers[uv_lay]].uv
-                    uvdata[uv_lay][2*vert.index] = uv.x
-                    uvdata[uv_lay][2*vert.index+1] = uv.y
+                    uv_coords = loop[uv_layers[uv_lay]].uv
+                    uvdata[uv_lay][2*vert.index] = uv_coords.x
+                    uvdata[uv_lay][2*vert.index+1] = uv_coords.y
                 vertposlist[3*vert.index] = vert.co.x
                 vertposlist[3*vert.index+1] = vert.co.y
                 vertposlist[3*vert.index+2] = vert.co.z
@@ -290,8 +307,16 @@ class MeshParser(object):
                 vertnormallist[3*vert.index+2] = vert.normal.z
 
         self.vert_data = {
-            'position': {'type': 'float32', 'components': 3, 'data': vertposlist},
-            'normal': {'type': 'float32', 'components': 3, 'data': vertnormallist},
+            'position': {
+                'type': 'float32',
+                'components': 3,
+                'data': vertposlist
+            },
+            'normal': {
+                'type': 'float32',
+                'components': 3,
+                'data': vertnormallist
+            },
         }
 
         for uv_name in uvdata:
@@ -301,8 +326,6 @@ class MeshParser(object):
             }
 
 
-
-
 def separate_mesh_by_material(mesh, obj):
     '''Returns a list of b-mesh meshes separating a mesh by material.
 
@@ -310,8 +333,6 @@ def separate_mesh_by_material(mesh, obj):
         [('mesh_name', bmesh, [instance_list]), ...]
 
     Also does any processing of the mesh required'''
-    # Preprocess meshes as bpy.types.Mesh
-    split_edges = mesh.calc_normals_split()
 
     # Convert to bmesh, split by faces:
     old_mesh = bmesh.new()
@@ -331,11 +352,18 @@ def separate_mesh_by_material(mesh, obj):
                     face_remove_list.append(face)
             # Remove faces that aren't part of this material
             for face in face_remove_list:
-                vert_list = list(face.verts)
                 new_mesh.faces.remove(face)
-                for vert in vert_list:
-                    if vert.link_faces:
-                        new_mesh.verts.remove(vert)
+
+            # Remove isolated verts
+            vert_remove_list = list()
+            for vert in new_mesh.verts:
+                vert_remove_list.append(vert)
+                for face in new_mesh.faces:
+                    if vert in face.verts and vert in vert_remove_list:
+                        vert_remove_list.remove(vert)
+            for vert in vert_remove_list:
+                new_mesh.verts.remove(vert)
+            new_mesh.verts.index_update()
 
             # Give it a sensible name
             if len(mesh.materials) == 1:
@@ -416,7 +444,6 @@ class MaterialExporter(dict):
                 self['bumpMapFactor'] = tex.normal_factor
                 self['normalMapUv'] = uv_layer
 
-
         mat_file_name = self.material.name + '.json'
         file_path = os.path.join(path_data['mat'], mat_file_name)
         json.dump(self, open(file_path, 'w'), indent=4, sort_keys=True)
@@ -427,188 +454,29 @@ def warn(message):
     print("Warning: {}".format(message))
 
 
+def info(message):
+    '''Displays an info message'''
+    print("Info: {}".format(message))
+
+
 def children_recursive(root_node):
     '''Return all children nodes of a root node'''
     child_list = list()
     for child in root_node.children:
+        child_list = child_list + children_recursive(child)
         child_list.append(child)
-        child_list += children_recursive(child)
     return child_list
 
 
-def iterate_list_display_progress(iterable, function, name):
-    '''A ghetto status bar'''
-    for counter, obj in enumerate(iterable):
-        print("{} {}/{}".format(name, counter, len(iterable)), end='\r')
-        function(*obj)
-    print("{} Done".format(name), end='\n')
-
-
-def export_mappings(mapping_list, name, path_data):
-    '''Exports the mapping between meshes and materials'''
-    output = {'mapping':list()}
-
-    mesh_to_material_path = os.path.relpath(path_data['mat'], path_data['mesh'])
-    for mesh_map in mapping_list:
-        for face in mesh_map[1].faces:
-            mat_id = face.material_index
-            break
-        if mesh_map[2][0].data.materials:
-            mat_name = mesh_map[2][0].data.materials[mat_id].name
-            new_mat_path = os.path.join(mesh_to_material_path, mat_name+'.json')
-        else:
-            new_mat_path = "None"
-
-        output['mapping'].append({'path': new_mat_path})
-
-    file_name = os.path.join(path_data['mesh'], name + '.mapping.json')
-    json.dump(output, open(file_name, 'w'), indent=4, sort_keys=True)
-
-
-def export_meshes(mesh_list, name, path_data, uv_list):
-    '''Exports all the meshes'''
-    node_data, parents = generate_node_data(mesh_list)
-    vertex_data = generate_vertex_data(mesh_list, uv_list)
-    mesh_data = generate_mesh_data(mesh_list)
-    instance_data, mapping_list = generate_instance_data(mesh_list)
-    output = {
-        'model': {
-            'version': 2,
-            'nodes': [
-                {
-                    "name": "RootNode",
-                    "position": [0, 0, 0],
-                    "rotation": [0, 0, 0],
-                    "scale": [1, 1, 1],
-                }
-            ] + node_data,
-            'parents': [-1] + parents,     # Parent the root node to the scene
-            'skins': [],         # Something to do with bones and animation
-
-            # For each mesh, a collection of vertex positions and normals
-            'vertices': vertex_data,
-
-            # For each mesh, a description of how the vertices fit together
-            'meshes': mesh_data,
-            'meshInstances': instance_data  # Creating instances of each mesh
-        }
-    }
-    new_mesh_path = os.path.join(path_data['mesh'], name + '.json')
-
-    json.dump(output, open(new_mesh_path, 'w+'), indent=4, sort_keys=True)
-
-    return mapping_list
-
-
-def generate_vertex_data(mesh_list, uv_list):
-    '''returns a playcanvas compatible list of vertex positions and normals'''
-    vert_list = list()
-    for mesh in mesh_list:
-        percent = (mesh_list.index(mesh)+1) / len(mesh_list)
-        print("Generating Vertex Data  {:3}%".format(int(percent*100)), end='\r')
-        vert_list.append(extract_vert_data(mesh, uv_list))
-    print('')
-    return vert_list
-
-
-def extract_vert_data(mesh_data, uv_list):
-    '''Cretes a playcanvas compatible dict of vertex positions, normals, uv-maps etc '''
-    _mesh_name, mesh, _instances = mesh_data
-
-    numverts = len(mesh.verts)
-    vertposlist = numverts*3*[None]
-    vertnormallist = numverts*3*[None]
-    uvdata = {i:numverts*2*[None].copy() for i in mesh.loops.layers.uv.keys()}
-    for face in mesh.faces:
-        for loop in face.loops:
-            vert = loop.vert
-
-            for uv_lay in mesh.loops.layers.uv.keys():
-                uv = loop[mesh.loops.layers.uv[uv_lay]].uv
-                uvdata[uv_lay][2*vert.index] = uv.x
-                uvdata[uv_lay][2*vert.index+1] = uv.y
-            print(vert.index)
-            vertposlist[3*vert.index] = vert.co.x
-            vertposlist[3*vert.index+1] = vert.co.y
-            vertposlist[3*vert.index+2] = vert.co.z
-            vertnormallist[3*vert.index] = vert.normal.x
-            vertnormallist[3*vert.index+1] = vert.normal.y
-            vertnormallist[3*vert.index+2] = vert.normal.z
-
-    vert_dict = {
-        'position': {'type': 'float32', 'components': 3, 'data': vertposlist},
-        'normal': {'type': 'float32', 'components': 3, 'data': vertnormallist},
-    }
-
-    for uv_name in uvdata:
-        uv_index = uv_list.index(uv_name)
-        vert_dict['texCoord{}'.format(uv_index)] = {
-            'type': 'float32', 'components': 2, 'data': uvdata[uv_name]
-        }
-    return vert_dict
-
-
-def generate_mesh_data(mesh_list):
-    '''returns a playcanvas compatible dict of what vertex id's make up faces'''
-    mesh_data_list = list()
-    for mesh in mesh_list:
-        percent = (mesh_list.index(mesh)+1) / len(mesh_list)
-        print("Generating Object Data  {:3}%".format(int(percent*100)), end='\r')
-        mesh_data_list.append(extract_mesh_data(mesh, mesh_list))
-    print('')
-    return mesh_data_list
-
-
-def extract_mesh_data(mesh_data, mesh_list):
-    '''Converts a mesh into a dict'''
-    _mesh_name, mesh, _instances = mesh_data
-
-     # Where the vertex data is in the mesh_list
-    vertices = mesh_list.index(mesh_data)
-
-    indices = list()  # What vertices make up a face
-    for face in mesh.faces:
-        for vert in face.verts:
-            indices.append(vert.index)
-
-    typ = 'triangles'
-    base = 0
-    count = len(indices)
-
-    minpos = [float('inf'), float('inf'), float('inf')].copy()
-    maxpos = [float('inf'), float('inf'), float('inf')].copy()
-    for face in mesh.faces:
-        for loop in face.loops:
-            vert = loop.vert
-            minpos[0] = min(vert.co.x, minpos[0])
-            minpos[1] = min(vert.co.y, minpos[1])
-            minpos[2] = min(vert.co.z, minpos[2])
-            maxpos[0] = max(vert.co.x, minpos[0])
-            maxpos[1] = max(vert.co.y, minpos[1])
-            maxpos[2] = max(vert.co.z, minpos[2])
-
-    mesh_dict = {
-        'aabb': {'min': minpos, 'max': maxpos},
-        'vertices': vertices,
-        'indices': indices,
-        'type': typ,
-        'base': base,
-        'count': count
-    }
-
-    return mesh_dict
-
-
 def generate_node_data(mesh_list):
-    '''returns a playcanvas compatible list of positions and locations of the various nodes'''
+    '''returns a playcanvas compatible list of positions and locations of the
+    various nodes'''
     node_data = list()
     parent_list = list()
     for mesh in mesh_list:
-        percent = (mesh_list.index(mesh)+1) / len(mesh_list)
-        print("Generating Node Data    {:3}%".format(int(percent*100)))
-
         for instance in mesh[2]:
-            corrected_rotation = mathutils.Vector(instance.rotation_euler) * 180 / math.pi
+            corrected_rotation = mathutils.Vector(instance.rotation_euler)
+            corrected_rotation *= 180 / math.pi
             node_dict = {
                 'name': instance.name,
                 'position': list(instance.location),  # Relative to parent
@@ -620,7 +488,8 @@ def generate_node_data(mesh_list):
     node_name_list = [n['name'] for n in node_data]
     for mesh in mesh_list:
         for instance in mesh[2]:
-            if instance.parent is not None and instance.parent.name in node_name_list:
+            if instance.parent is not None and \
+                    instance.parent.name in node_name_list:
                 parent_list.append(node_name_list.index(instance.parent.name)+1)
             else:
                 parent_list.append(0)
@@ -631,14 +500,9 @@ def generate_node_data(mesh_list):
 def generate_instance_data(mesh_list):
     '''returns a playcanvas compatible list linking meshes to instances'''
     instance_data = list()
-    mapping_list = list()
     node_id = 1  # Not zero because there is a root node without a mesh
     for mesh in mesh_list:
-        percent = (mesh_list.index(mesh)+1) / len(mesh_list)
-        print("Generating Node Data    {:3}%".format(int(percent*100)))
-
         for _instance in mesh[2]:
-
             mesh_num = mesh_list.index(mesh)
             ob_num = node_id
             instance_dict = {
@@ -646,10 +510,8 @@ def generate_instance_data(mesh_list):
                 'mesh': mesh_num
             }
             instance_data.append(instance_dict)
-            mapping_list.append(mesh)
             node_id += 1
-    print('')
-    return instance_data, mapping_list
+    return instance_data
 
 
 def copy_image(tex, img_path):
@@ -670,7 +532,7 @@ def make_directories(dir_list):
     for direct in dir_list:
         full_path = get_full_path(direct)
         if not os.path.isdir(full_path):
-            print("Making Directory {}".format(full_path))
+            warn("Making Directory {}".format(full_path))
             os.makedirs(full_path)
 
 
@@ -688,8 +550,8 @@ def get_full_path(slug):
 
 
 class ExportPlaycanvas(Operator, ExportHelper):
-    """Playcanvas is an HTML5 game engine that works using a JSON file format
-    for storing materials and meshes"""
+    '''Playcanvas is an HTML5 game engine that works using a JSON file format
+    for storing materials and meshes'''
     # important since its how bpy.ops.import_test.some_data is constructed
     bl_idname = "export_test.some_data"
     bl_label = "Export Playcanavs (.json)"
@@ -723,9 +585,15 @@ class ExportPlaycanvas(Operator, ExportHelper):
 
     def execute(self, context):
         '''Actually does the export'''
+        path_data = {
+            'mesh': self.mesh_path,
+            'mat': self.mat_path,
+            'img': self.img_path,
+            'name': self.file_name
+        }
         return do_export(
             context,
-            self.filepath, self.mesh_path, self.mat_path, self.image_path
+            path_data,
         )
 
 
