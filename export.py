@@ -58,7 +58,7 @@ class SceneExporter(object):
     def __init__(self, context, path_data, separate_objects=False):
 
         if context is not None:
-            obj_list = bpy.data.selected_objects
+            obj_list = context.selected_objects
         else:
             obj_list = bpy.data.objects
 
@@ -347,7 +347,7 @@ class MeshParser(dict):
                 vertposlist[3*loop.index] = vert.co.x
                 vertposlist[3*loop.index+1] = vert.co.y
                 vertposlist[3*loop.index+2] = vert.co.z
-                normal = loop.normal
+                normal = loop.calc_normal()
                 vertnormallist[3*loop.index] = normal.x
                 vertnormallist[3*loop.index+1] = normal.y
                 vertnormallist[3*loop.index+2] = normal.z
@@ -532,17 +532,9 @@ def copy_image(tex, img_path):
 def make_directories(dir_list):
     '''Creates the listed directories if they do not exist'''
     for direct in dir_list:
-        full_path = get_full_path(direct)
-        if not os.path.isdir(full_path):
-            warn("Making Directory {}".format(full_path))
-            os.makedirs(full_path)
-
-
-def get_full_path(slug):
-    '''Makes sure all paths start at the same place'''
-    if slug.startswith('.'):
-        return bpy.path.abspath('//')+slug
-    return slug
+        if not os.path.isdir(direct):
+            warn("Making Directory {}".format(direct))
+            os.makedirs(direct)
 
 # ----------------------------- BLENDER UI THINGS -----------------------------
 
@@ -587,11 +579,14 @@ class ExportPlaycanvas(Operator, ExportHelper):
 
     def execute(self, context):
         '''Actually does the export'''
+
+        base = os.path.split(self.filepath)[0]
+        filename = os.path.split(self.filepath)[1].split('.')[0]
         path_data = {
-            'mesh': self.mesh_path,
-            'mat': self.mat_path,
-            'img': self.img_path,
-            'name': self.file_name
+            'mesh': os.path.join(base, self.mesh_path),
+            'mat': os.path.join(base, self.mat_path),
+            'img': os.path.join(base, self.image_path),
+            'name': filename
         }
         return do_export(
             context,
