@@ -318,6 +318,9 @@ class MeshParser(dict):
 
     def update_mesh_data(self):
         '''Converts a mesh into a dict'''
+        # TODO: Change to using blender Mesh rather than bmesh
+        # so as to get the split normal data propertly
+
         # Can't find the way to update loop indexes without iterating, and
         # besides, need to to do the indices
         numloops = 0
