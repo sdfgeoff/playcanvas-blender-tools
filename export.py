@@ -1,16 +1,4 @@
-#pylint: disable=too-few-public-methods,ungrouped-imports,wrong-import-position,import-error
-
-bl_info = {  #pylint: disable=invalid-name
-    "name": "Export Playcanavs (.json)",
-    "author": "sdfgeoff",
-    "version": (1, 1),
-    "blender": (2, 71, 0),
-    "location": "File > Export > Playcanvas (.json)",
-    "description": "Export Playcanavs (.json)",
-    "warning": "",
-    "wiki_url": "",
-    "category": "Import-Export"}
-
+# pylint: disable=too-few-public-methods,import-error
 """
 This file exports models for playcanvas. It can either be set to export a single
 file for an entire scene or to export each root parent object into a separate
@@ -20,6 +8,7 @@ The re-write supports multiple UV layers. Hopefully it will also support
 flat shading, but that is yet to be seen.
 
 """
+
 import os
 import json
 import math
@@ -30,6 +19,17 @@ from bpy.types import Operator
 import bpy
 import bmesh
 import mathutils
+
+bl_info = {  # pylint: disable=invalid-name
+    "name": "Export Playcanavs (.json)",
+    "author": "sdfgeoff",
+    "version": (1, 1),
+    "blender": (2, 71, 0),
+    "location": "File > Export > Playcanvas (.json)",
+    "description": "Export Playcanavs (.json)",
+    "warning": "",
+    "wiki_url": "",
+    "category": "Import-Export"}
 
 
 def do_export(context, path_data, separate_objects=False):
@@ -76,9 +76,10 @@ class SceneExporter(object):
                     # Add the root node to the heirachy
                     self.obj_list.append(ObjectHeirachy(obj.name, obj))
 
-
         for counter, heirachy in enumerate(self.obj_list):
-            info("Exporting Heirachy {}/{}".format(counter + 1, len(self.obj_list)))
+            info("Exporting Heirachy {}/{}".format(
+                counter + 1, len(self.obj_list)
+            ))
             HeirachyExporter(heirachy, path_data)
 
 
@@ -111,9 +112,7 @@ class HeirachyExporter(object):
         for mesh_id, mesh in enumerate(self.mesh_list):
             mesh_data_list.append(MeshParser(mesh, mesh_id, self.uv_list))
 
-        # TODO: Put in this object at some stage
-        node_data, parents = generate_node_data(self.mesh_list)
-        instance_data = generate_instance_data(self.mesh_list)
+        node_data, parents = self.generate_node_data()
 
         info("Exporting Mappings ...")
         material_list = self.export_mappings(path_data)
@@ -148,7 +147,7 @@ class HeirachyExporter(object):
                 'meshes': mesh_data_list,
 
                 # What mesh links to what node
-                'meshInstances': instance_data
+                'meshInstances': self.generate_instance_data()
             }
         }
         new_mesh_path = os.path.join(
@@ -214,13 +213,13 @@ class HeirachyExporter(object):
                 break
             if mesh_map[2][0].data.materials:
                 # If there is a material in the mesh, export it's path
-                # TODO: In future only export materials here?
                 mat = mesh_map[2][0].data.materials[mat_id]
-                materials[mat.name] = mat
-
                 new_mat_path = os.path.join(
                     mesh_to_material_path, mat.name+'.json'
                 )
+                # Store the material so we know which are used so we don't
+                # export unnecesssary ones
+                materials[mat.name] = mat
             else:
                 new_mat_path = "None"
 
@@ -233,6 +232,50 @@ class HeirachyExporter(object):
         json.dump(output, open(file_name, 'w'), indent=4, sort_keys=True)
 
         return [materials[m] for m in materials]
+
+    def generate_instance_data(self):
+        '''returns a playcanvas compatible list linking meshes to instances'''
+        instance_data = list()
+        node_id = 1  # Not zero because there is a root node without a mesh
+        for mesh_id, mesh in enumerate(self.mesh_list):
+            for _instance in mesh[2]:
+                ob_num = node_id
+                instance_dict = {
+                    'node': ob_num,
+                    'mesh': mesh_id
+                }
+                instance_data.append(instance_dict)
+                node_id += 1
+        return instance_data
+
+    def generate_node_data(self):
+        '''returns a playcanvas compatible list of positions and locations of the
+        various nodes'''
+        node_data = list()
+        for mesh in self.mesh_list:
+            for instance in mesh[2]:
+                corrected_rotation = mathutils.Vector(instance.rotation_euler)
+                corrected_rotation *= 180 / math.pi
+                node_dict = {
+                    'name': instance.name,
+                    'position': list(instance.location),  # Relative to parent
+                    'rotation': list(corrected_rotation),
+                    'scale': list(instance.scale),
+                }
+                node_data.append(node_dict)
+
+        parent_list = list()
+        node_name_list = [n['name'] for n in node_data]
+        for mesh in self.mesh_list:
+            for instance in mesh[2]:
+                if instance.parent is not None and \
+                        instance.parent.name in node_name_list:
+                    parent_id = node_name_list.index(instance.parent.name)+1
+                    parent_list.append(parent_id)
+                else:
+                    parent_list.append(0)
+
+        return node_data, parent_list
 
 
 class MeshParser(dict):
@@ -466,52 +509,6 @@ def children_recursive(root_node):
         child_list = child_list + children_recursive(child)
         child_list.append(child)
     return child_list
-
-
-def generate_node_data(mesh_list):
-    '''returns a playcanvas compatible list of positions and locations of the
-    various nodes'''
-    node_data = list()
-    parent_list = list()
-    for mesh in mesh_list:
-        for instance in mesh[2]:
-            corrected_rotation = mathutils.Vector(instance.rotation_euler)
-            corrected_rotation *= 180 / math.pi
-            node_dict = {
-                'name': instance.name,
-                'position': list(instance.location),  # Relative to parent
-                'rotation': list(corrected_rotation),
-                'scale': list(instance.scale),
-            }
-            node_data.append(node_dict)
-
-    node_name_list = [n['name'] for n in node_data]
-    for mesh in mesh_list:
-        for instance in mesh[2]:
-            if instance.parent is not None and \
-                    instance.parent.name in node_name_list:
-                parent_list.append(node_name_list.index(instance.parent.name)+1)
-            else:
-                parent_list.append(0)
-
-    return node_data, parent_list
-
-
-def generate_instance_data(mesh_list):
-    '''returns a playcanvas compatible list linking meshes to instances'''
-    instance_data = list()
-    node_id = 1  # Not zero because there is a root node without a mesh
-    for mesh in mesh_list:
-        for _instance in mesh[2]:
-            mesh_num = mesh_list.index(mesh)
-            ob_num = node_id
-            instance_dict = {
-                'node': ob_num,
-                'mesh': mesh_num
-            }
-            instance_data.append(instance_dict)
-            node_id += 1
-    return instance_data
 
 
 def copy_image(tex, img_path):
