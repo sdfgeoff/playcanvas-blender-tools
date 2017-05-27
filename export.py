@@ -183,11 +183,15 @@ def separate_mesh_by_material(mesh, obj):
 
     Also does any processing of the mesh required'''
     # Preprocess meshes as bpy.types.Mesh
-    mesh.calc_normals_split()
+    split_edges = mesh.calc_normals_split()
 
     # Convert to bmesh, split by faces:
     old_mesh = bmesh.new()
     old_mesh.from_mesh(mesh)
+
+    # OPERATIONS ON BMESH TO PREPARE GEOMETRY
+    bmesh.ops.triangulate(old_mesh, faces=old_mesh.faces)
+
     mesh_list = list()
     if mesh.materials:
         for mat_id, mat in enumerate(mesh.materials):
@@ -215,10 +219,6 @@ def separate_mesh_by_material(mesh, obj):
         # No materials, let's just hope things turn out good....
         warn("No materials in mesh {}".format(mesh.name))
         mesh_list.append((mesh.name, old_mesh, obj))
-
-    # Anything to be done to bmeshes:
-    for output_mesh in mesh_list:
-        bmesh.ops.triangulate(output_mesh[1], faces=output_mesh[1].faces)
 
     return mesh_list
 
@@ -390,7 +390,6 @@ def extract_vert_data(mesh_data, uv_list):
     numverts = len(mesh.verts)
     vertposlist = numverts*3*[None]
     vertnormallist = numverts*3*[None]
-    print(mesh.loops.layers.uv)
     uvdata = {i:numverts*2*[None].copy() for i in mesh.loops.layers.uv.keys()}
     for face in mesh.faces:
         for loop in face.loops:
@@ -400,7 +399,7 @@ def extract_vert_data(mesh_data, uv_list):
                 uv = loop[mesh.loops.layers.uv[uv_lay]].uv
                 uvdata[uv_lay][2*vert.index] = uv.x
                 uvdata[uv_lay][2*vert.index+1] = uv.y
-
+            print(vert.index)
             vertposlist[3*vert.index] = vert.co.x
             vertposlist[3*vert.index+1] = vert.co.y
             vertposlist[3*vert.index+2] = vert.co.z
