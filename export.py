@@ -120,12 +120,42 @@ class HeirachyExporter(object):
 
         # Meshes
         mesh_list = self.generate_mesh_list()
-        mapping_list = export_meshes(
-            mesh_list,
-            self.heirachy.name,
-            path_data,
-            self.uv_list
-        )
+        mesh_data_list = list()
+        for mesh_id, mesh in enumerate(mesh_list):
+            mesh_data_list.append(MeshParser(mesh, mesh_id, self.uv_list))
+
+
+        # REPLACE SOON
+        node_data, parents = generate_node_data(mesh_list)
+        instance_data, mapping_list = generate_instance_data(mesh_list)
+
+
+        output = {
+            'model': {
+                'version': 2,
+                'nodes': [
+                    {
+                        "name": "RootNode",
+                        "position": [0, 0, 0],
+                        "rotation": [0, 0, 0],
+                        "scale": [1, 1, 1],
+                    }
+                ] + node_data,
+                'parents': [-1] + parents,     # Parent the root node to the scene
+                'skins': [],         # Something to do with bones and animation
+
+                # For each mesh, a collection of vertex positions and normals
+                'vertices': [m.vert_data for m in mesh_data_list],
+
+                # For each mesh, a description of how the vertices fit together
+                'meshes': [m.to_dict() for m in mesh_data_list],
+                'meshInstances': instance_data  # Creating instances of each mesh
+            }
+        }
+        #json.dumps(output, indent=2, sort_keys=True))
+        new_mesh_path = os.path.join(path_data['mesh'], self.heirachy.name + '.json')
+        json.dump(output, open(new_mesh_path, 'w+'), indent=4, sort_keys=True)
+
         export_mappings(
             mapping_list,
             self.heirachy.name,
@@ -173,6 +203,104 @@ class HeirachyExporter(object):
             mesh_list += meshes
 
         return mesh_list
+
+
+class MeshParser(object):
+    '''Parses a single mesh, and provides access to it's face indices,
+    and vertex data'''
+    def __init__(self, mesh, id_num, uv_list):
+        self.mesh = mesh[1]
+        self.uv_list = uv_list
+
+        # This isn't really dealt with at this point, and has more to do with
+        # when you append all of the vertices together into the vertex list
+        # But keeping it the order of the meshes makes sense, and is the easiest
+        self.vertices = id_num
+
+        self.indices = None
+
+        self.aabb = self.calculate_bounding_box()
+
+        # These are always the same
+        self.type = 'triangles'
+        self.base = 0
+
+        self.update_mesh_data()
+        self.update_vertex_data()
+
+    @property
+    def count(self):
+        '''Number of face-vertex indices'''
+        return len(self.indices)
+
+    def to_dict(self):
+        return {
+                "aabb": self.aabb,
+                "base": self.base,
+                "count": self.count,
+                "indices": self.indices,
+                "type": self.type,
+                "vertices": self.vertices
+            }
+
+    def calculate_bounding_box(self):
+        '''Get's the mesh extents'''
+        minpos = [float('inf'), float('inf'), float('inf')].copy()
+        maxpos = [float('inf'), float('inf'), float('inf')].copy()
+        for face in self.mesh.faces:
+            for loop in face.loops:
+                vert = loop.vert
+                minpos[0] = min(vert.co.x, minpos[0])
+                minpos[1] = min(vert.co.y, minpos[1])
+                minpos[2] = min(vert.co.z, minpos[2])
+                maxpos[0] = max(vert.co.x, minpos[0])
+                maxpos[1] = max(vert.co.y, minpos[1])
+                maxpos[2] = max(vert.co.z, minpos[2])
+
+        return {'min': minpos, 'max': maxpos}
+
+
+    def update_mesh_data(self):
+        '''Converts a mesh into a dict'''
+        self.indices = list()  # What vertices make up a face
+        for face in self.mesh.faces:
+            for vert in face.verts:
+                self.indices.append(vert.index)
+
+    def update_vertex_data(self):
+        '''Extracts normals and UV's'''
+        numverts = len(self.mesh.verts)
+        vertposlist = numverts*3*[None]
+        vertnormallist = numverts*3*[None]
+        uvdata = {i:numverts*2*[None].copy() for i in self.mesh.loops.layers.uv.keys()}
+        for face in self.mesh.faces:
+            for loop in face.loops:
+                vert = loop.vert
+
+                uv_layers = self.mesh.loops.layers.uv
+                for uv_lay in uv_layers.keys():
+                    uv = loop[uv_layers[uv_lay]].uv
+                    uvdata[uv_lay][2*vert.index] = uv.x
+                    uvdata[uv_lay][2*vert.index+1] = uv.y
+                vertposlist[3*vert.index] = vert.co.x
+                vertposlist[3*vert.index+1] = vert.co.y
+                vertposlist[3*vert.index+2] = vert.co.z
+                vertnormallist[3*vert.index] = vert.normal.x
+                vertnormallist[3*vert.index+1] = vert.normal.y
+                vertnormallist[3*vert.index+2] = vert.normal.z
+
+        self.vert_data = {
+            'position': {'type': 'float32', 'components': 3, 'data': vertposlist},
+            'normal': {'type': 'float32', 'components': 3, 'data': vertnormallist},
+        }
+
+        for uv_name in uvdata:
+            uv_index = self.uv_list.index(uv_name)
+            self.vert_data['texCoord{}'.format(uv_index)] = {
+                'type': 'float32', 'components': 2, 'data': uvdata[uv_name]
+            }
+
+
 
 
 def separate_mesh_by_material(mesh, obj):
@@ -488,7 +616,6 @@ def generate_node_data(mesh_list):
                 'scale': list(instance.scale),
             }
             node_data.append(node_dict)
-    print('')
 
     node_name_list = [n['name'] for n in node_data]
     for mesh in mesh_list:
