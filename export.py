@@ -347,7 +347,7 @@ class MeshParser(dict):
                 vertposlist[3*loop.index] = vert.co.x
                 vertposlist[3*loop.index+1] = vert.co.y
                 vertposlist[3*loop.index+2] = vert.co.z
-                normal = loop.calc_normal()
+                normal = vert.normal #loop.calc_normal()
                 vertnormallist[3*loop.index] = normal.x
                 vertnormallist[3*loop.index+1] = normal.y
                 vertnormallist[3*loop.index+2] = normal.z
