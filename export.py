@@ -31,7 +31,6 @@ bl_info = {  # pylint: disable=invalid-name
     "wiki_url": "",
     "category": "Import-Export"}
 
-
 def do_export(context, path_data, separate_objects=False):
     '''Runs the exporter on the scene. By default it will do selected objects,
     if there context is None it will do all of them. The parameters are:
@@ -319,12 +318,18 @@ class MeshParser(dict):
 
     def update_mesh_data(self):
         '''Converts a mesh into a dict'''
+        # Can't find the way to update loop indexes without iterating, and
+        # besides, need to to do the indices
+        numloops = 0
         self['indices'] = list()  # What vertices make up a face
         for face in self.mesh.faces:
-            for vert in face.verts:
-                self['indices'].append(vert.index)
+            for loop in face.loops:
+                loop.index = numloops
+                numloops += 1
 
-        numverts = len(self.mesh.verts)
+        numverts = numloops
+
+        # Preallocate because we won't be going in any sort of order
         vertposlist = numverts*3*[None]
         vertnormallist = numverts*3*[None]
 
@@ -333,17 +338,19 @@ class MeshParser(dict):
         for face in self.mesh.faces:
             for loop in face.loops:
                 vert = loop.vert
-
+                self['indices'].append(loop.index)
                 for uv_lay in uv_layers.keys():
                     uv_coords = loop[uv_layers[uv_lay]].uv
-                    uvdata[uv_lay][2*vert.index] = uv_coords.x
-                    uvdata[uv_lay][2*vert.index+1] = uv_coords.y
-                vertposlist[3*vert.index] = vert.co.x
-                vertposlist[3*vert.index+1] = vert.co.y
-                vertposlist[3*vert.index+2] = vert.co.z
-                vertnormallist[3*vert.index] = vert.normal.x
-                vertnormallist[3*vert.index+1] = vert.normal.y
-                vertnormallist[3*vert.index+2] = vert.normal.z
+                    uvdata[uv_lay][2*loop.index] = uv_coords.x
+                    uvdata[uv_lay][2*loop.index+1] = uv_coords.y
+
+                vertposlist[3*loop.index] = vert.co.x
+                vertposlist[3*loop.index+1] = vert.co.y
+                vertposlist[3*loop.index+2] = vert.co.z
+                normal = loop.normal
+                vertnormallist[3*loop.index] = normal.x
+                vertnormallist[3*loop.index+1] = normal.y
+                vertnormallist[3*loop.index+2] = normal.z
 
         self.vert_data = {
             'position': {
