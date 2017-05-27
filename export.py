@@ -31,6 +31,18 @@ bl_info = {  # pylint: disable=invalid-name
     "wiki_url": "",
     "category": "Import-Export"}
 
+# ------ SOME CONFIGURATION -------
+
+PRETTY_JSON = False  # Make JSON human readable, takes more disk space
+
+# ------ END CONFIGURATION -----
+
+
+PRETTY_JSON_PARAMS = {'indent': 4, 'separators': (', ', ':')}
+JSON_PARAMS = {'sort_keys': True, 'separators': (',', ':')}
+if PRETTY_JSON:
+    JSON_PARAMS.update(PRETTY_JSON_PARAMS)
+
 def do_export(context, path_data, separate_objects=False):
     '''Runs the exporter on the scene. By default it will do selected objects,
     if there context is None it will do all of them. The parameters are:
@@ -153,7 +165,7 @@ class HeirachyExporter(object):
             path_data['mesh'],
             self.heirachy.name + '.json'
         )
-        json.dump(output, open(new_mesh_path, 'w+'), indent=4, sort_keys=True)
+        json.dump(output, open(new_mesh_path, 'w+'), **JSON_PARAMS)
 
     def generate_uv_list(self):
         '''A list that makes sure UV maps end up in the right place'''
@@ -228,7 +240,7 @@ class HeirachyExporter(object):
             path_data['mesh'],
             self.heirachy.name + '.mapping.json'
         )
-        json.dump(output, open(file_name, 'w'), indent=4, sort_keys=True)
+        json.dump(output, open(file_name, 'w'), **JSON_PARAMS)
 
         return [materials[m] for m in materials]
 
@@ -350,7 +362,7 @@ class MeshParser(dict):
                 vertposlist[3*loop.index] = vert.co.x
                 vertposlist[3*loop.index+1] = vert.co.y
                 vertposlist[3*loop.index+2] = vert.co.z
-                normal = vert.normal #loop.calc_normal()
+                normal = vert.normal  # loop.calc_normal()
                 vertnormallist[3*loop.index] = normal.x
                 vertnormallist[3*loop.index+1] = normal.y
                 vertnormallist[3*loop.index+2] = normal.z
@@ -497,7 +509,7 @@ class MaterialExporter(dict):
 
         mat_file_name = self.material.name + '.json'
         file_path = os.path.join(path_data['mat'], mat_file_name)
-        json.dump(self, open(file_path, 'w'), indent=4, sort_keys=True)
+        json.dump(self, open(file_path, 'w'), **JSON_PARAMS)
 
 
 def warn(message):
