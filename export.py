@@ -33,7 +33,7 @@ bl_info = {  # pylint: disable=invalid-name
 
 # ------ SOME CONFIGURATION -------
 
-PRETTY_JSON = True  # Make JSON human readable, takes more disk space
+PRETTY_JSON = False  # Make JSON human readable, takes more disk space
 
 # ------ END CONFIGURATION -----
 
