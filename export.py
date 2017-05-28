@@ -353,7 +353,6 @@ class MeshParser(dict):
         vertnormallist = numverts*3*[None]
 
         uv_layers = mesh.uv_layers
-        print(uv_layers)
         uvdata = {i: numverts*2*[None].copy() for i in uv_layers.keys()}
         for loop in mesh.loops:
             vert = mesh.vertices[loop.vertex_index]
