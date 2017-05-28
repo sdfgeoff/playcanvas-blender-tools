@@ -74,8 +74,6 @@ class SceneExporter(object):
         else:
             obj_list = bpy.data.objects
 
-        obj_list = [o for o in obj_list if o.type == 'MESH']
-
         self.obj_list = list()
         if not separate_objects:
             obj = ObjectHeirachy(path_data['name'])
@@ -171,8 +169,9 @@ class HeirachyExporter(object):
         '''A list that makes sure UV maps end up in the right place'''
         layer_names = list()
         for obj in self.heirachy.objects:
-            for layer in obj.data.uv_layers:
-                layer_names.append(layer.name)
+            if obj.type == 'MESH':
+                for layer in obj.data.uv_layers:
+                    layer_names.append(layer.name)
         return layer_names
 
     def generate_mesh_list(self):
@@ -182,14 +181,27 @@ class HeirachyExporter(object):
         This is so that the location of multiple instances of objects can be
         preserved
         '''
+        EMPTY_MESH = bpy.data.meshes.new("EmptyMesh")
+        mesh_contents = bmesh.new()
+        v1 = mesh_contents.verts.new((0, 0, 0))
+        v2 = mesh_contents.verts.new((0, 0, 0))
+        v3 = mesh_contents.verts.new((0, 0, 0))
+        mesh_contents.faces.new((v1, v2, v3))
+        mesh_contents.to_mesh(EMPTY_MESH)
+
         raw_meshes = dict()
         for obj in self.heirachy.objects:
             # We want to build a dict of:
             # {'mesh_name', [instance1, instance2 ...], 'mesh_name2'[...])
-            if obj.data.name not in raw_meshes:
-                raw_meshes[obj.data.name] = [obj]
+            if obj.type == 'MESH':
+                data = obj.data
             else:
-                raw_meshes[obj.data.name].append(obj)
+                data = EMPTY_MESH
+
+            if data.name not in raw_meshes:
+                raw_meshes[data.name] = [obj]
+            else:
+                raw_meshes[data.name].append(obj)
 
         mesh_list = list()
         for mesh_name in raw_meshes:
@@ -198,6 +210,7 @@ class HeirachyExporter(object):
             meshes = separate_mesh_by_material(mesh, raw_meshes[mesh_name])
             mesh_list += meshes
 
+        print(mesh_list)
         return mesh_list
 
     def export_mappings(self, path_data):
@@ -222,9 +235,11 @@ class HeirachyExporter(object):
             for face in mesh_map[1].faces:
                 mat_id = face.material_index
                 break
-            if mesh_map[2][0].data.materials:
+
+            data = mesh_map[2][0].data
+            if hasattr(data, 'materials') and data.materials:
                 # If there is a material in the mesh, export it's path
-                mat = mesh_map[2][0].data.materials[mat_id]
+                mat = data.materials[mat_id]
                 new_mat_path = os.path.join(
                     mesh_to_material_path, mat.name+'.json'
                 )
@@ -232,7 +247,11 @@ class HeirachyExporter(object):
                 # export unnecesssary ones
                 materials[mat.name] = mat
             else:
-                new_mat_path = "None"
+                mat_name = "None"
+                new_mat_path = os.path.join(
+                    mesh_to_material_path, mat_name+'.json'
+                )
+                self.export_dummy_material(mat_name, path_data)
 
             output['mapping'].append({'path': new_mat_path})
 
@@ -288,6 +307,13 @@ class HeirachyExporter(object):
 
         return node_data, parent_list
 
+    def export_dummy_material(self, name, path_data):
+
+        new_mat_path = os.path.join(
+            path_data['mat'], name+'.json'
+        )
+        json.dump({"mapping_format":"path"}, open(new_mat_path, 'w'))
+
 
 class MeshParser(dict):
     '''Parses a single mesh, and provides access to it's face indices,
@@ -316,15 +342,19 @@ class MeshParser(dict):
         '''Get's the mesh extents'''
         minpos = [float('inf'), float('inf'), float('inf')].copy()
         maxpos = [float('inf'), float('inf'), float('inf')].copy()
-        for face in self.mesh.faces:
-            for loop in face.loops:
-                vert = loop.vert
-                minpos[0] = min(vert.co.x, minpos[0])
-                minpos[1] = min(vert.co.y, minpos[1])
-                minpos[2] = min(vert.co.z, minpos[2])
-                maxpos[0] = max(vert.co.x, minpos[0])
-                maxpos[1] = max(vert.co.y, minpos[1])
-                maxpos[2] = max(vert.co.z, minpos[2])
+        if self.mesh.faces:
+            for face in self.mesh.faces:
+                for loop in face.loops:
+                    vert = loop.vert
+                    minpos[0] = min(vert.co.x, minpos[0])
+                    minpos[1] = min(vert.co.y, minpos[1])
+                    minpos[2] = min(vert.co.z, minpos[2])
+                    maxpos[0] = max(vert.co.x, minpos[0])
+                    maxpos[1] = max(vert.co.y, minpos[1])
+                    maxpos[2] = max(vert.co.z, minpos[2])
+        else:
+            minpos = [0,0,0]
+            maxpos = [0,0,0]
 
         return {'min': minpos, 'max': maxpos}
 
@@ -336,7 +366,7 @@ class MeshParser(dict):
         # Can't find the way to update loop indexes without iterating, and
         # besides, need to to do the indices
 
-        mesh = bpy.data.meshes.new("some_name")
+        mesh = bpy.data.meshes.new("TmpMesh")
         self.mesh.to_mesh(mesh)
         mesh.calc_normals_split()
 
@@ -436,7 +466,9 @@ def separate_mesh_by_material(mesh, obj):
                 mesh_name = mesh.name
             else:
                 mesh_name = mesh.name + '.' + mat.name
-            mesh_list.append((mesh_name, new_mesh, obj))
+
+            if new_mesh.verts:
+                mesh_list.append((mesh_name, new_mesh, obj))
     else:
         # No materials, let's just hope things turn out good....
         warn("No materials in mesh {}".format(mesh.name))
