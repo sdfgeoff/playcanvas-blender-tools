@@ -210,7 +210,6 @@ class HeirachyExporter(object):
             meshes = separate_mesh_by_material(mesh, raw_meshes[mesh_name])
             mesh_list += meshes
 
-        print(mesh_list)
         return mesh_list
 
     def export_mappings(self, path_data):
@@ -470,8 +469,6 @@ def separate_mesh_by_material(mesh, obj):
             if new_mesh.verts:
                 mesh_list.append((mesh_name, new_mesh, obj))
     else:
-        # No materials, let's just hope things turn out good....
-        warn("No materials in mesh {}".format(mesh.name))
         mesh_list.append((mesh.name, old_mesh, obj))
 
     return mesh_list
@@ -549,12 +546,12 @@ class MaterialExporter(dict):
 
 def warn(message):
     '''Display a warning message'''
-    print("Warning: {}".format(message))
+    print("\nWarning: {}".format(message))
 
 
 def info(message):
     '''Displays an info message'''
-    print("Info: {}".format(message))
+    print("\rInfo: {}".format(message), end='\r')
 
 
 def children_recursive(root_node):
@@ -583,7 +580,7 @@ def make_directories(dir_list):
     '''Creates the listed directories if they do not exist'''
     for direct in dir_list:
         if not os.path.isdir(direct):
-            warn("Making Directory {}".format(direct))
+            info("Making Directory {}".format(direct))
             os.makedirs(direct)
 
 # ----------------------------- BLENDER UI THINGS -----------------------------
