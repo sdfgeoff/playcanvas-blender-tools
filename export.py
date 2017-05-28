@@ -33,7 +33,7 @@ bl_info = {  # pylint: disable=invalid-name
 
 # ------ SOME CONFIGURATION -------
 
-PRETTY_JSON = False  # Make JSON human readable, takes more disk space
+PRETTY_JSON = True  # Make JSON human readable, takes more disk space
 
 # ------ END CONFIGURATION -----
 
@@ -335,37 +335,42 @@ class MeshParser(dict):
 
         # Can't find the way to update loop indexes without iterating, and
         # besides, need to to do the indices
+
+        mesh = bpy.data.meshes.new("some_name")
+        self.mesh.to_mesh(mesh)
+        mesh.calc_normals_split()
+
         numloops = 0
         self['indices'] = list()  # What vertices make up a face
-        for face in self.mesh.faces:
-            for loop in face.loops:
-                loop.index = numloops
-                numloops += 1
+        for loop in mesh.loops:
+            numloops += 1
 
         numverts = numloops
+
 
         # Preallocate because we won't be going in any sort of order
         vertposlist = numverts*3*[None]
         vertnormallist = numverts*3*[None]
 
-        uv_layers = self.mesh.loops.layers.uv
+        uv_layers = mesh.uv_layers
+        print(uv_layers)
         uvdata = {i: numverts*2*[None].copy() for i in uv_layers.keys()}
-        for face in self.mesh.faces:
-            for loop in face.loops:
-                vert = loop.vert
-                self['indices'].append(loop.index)
-                for uv_lay in uv_layers.keys():
-                    uv_coords = loop[uv_layers[uv_lay]].uv
-                    uvdata[uv_lay][2*loop.index] = uv_coords.x
-                    uvdata[uv_lay][2*loop.index+1] = uv_coords.y
+        for loop in mesh.loops:
+            vert = mesh.vertices[loop.vertex_index]
+            self['indices'].append(loop.index)
+            for uv_lay in uv_layers.keys():
+                uv_coords = uv_layers[uv_lay].data[loop.index].uv
+                uvdata[uv_lay][2*loop.index] = uv_coords.x
+                uvdata[uv_lay][2*loop.index+1] = uv_coords.y
 
-                vertposlist[3*loop.index] = vert.co.x
-                vertposlist[3*loop.index+1] = vert.co.y
-                vertposlist[3*loop.index+2] = vert.co.z
-                normal = vert.normal  # loop.calc_normal()
-                vertnormallist[3*loop.index] = normal.x
-                vertnormallist[3*loop.index+1] = normal.y
-                vertnormallist[3*loop.index+2] = normal.z
+            pos = vert.co
+            vertposlist[3*loop.index] = pos.x
+            vertposlist[3*loop.index+1] = pos.y
+            vertposlist[3*loop.index+2] = pos.z
+            normal = loop.normal
+            vertnormallist[3*loop.index] = normal.x
+            vertnormallist[3*loop.index+1] = normal.y
+            vertnormallist[3*loop.index+2] = normal.z
 
         self.vert_data = {
             'position': {
@@ -379,7 +384,6 @@ class MeshParser(dict):
                 'data': vertnormallist
             },
         }
-
         for uv_name in uvdata:
             uv_index = self.uv_list.index(uv_name)
             self.vert_data['texCoord{}'.format(uv_index)] = {
