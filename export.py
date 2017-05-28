@@ -283,11 +283,19 @@ class HeirachyExporter(object):
         node_data = list()
         for mesh in self.mesh_list:
             for instance in mesh[2]:
-                corrected_rotation = mathutils.Vector(instance.rotation_euler)
-                corrected_rotation *= 180 / math.pi
+                if instance.parent is not None:
+                    transform = instance.matrix_local
+                    position = transform.translation
+                    corrected_rotation = mathutils.Vector(transform.to_euler())
+                    corrected_rotation *= 180 / math.pi
+                    scale = transform.to_scale()
+                else:
+                    position = [0, 0, 0]
+                    corrected_rotation = [0, 0, 0]
+                    scale = [1, 1, 1]
                 node_dict = {
                     'name': instance.name,
-                    'position': list(instance.location),  # Relative to parent
+                    'position': list(position),  # Relative to parent
                     'rotation': list(corrected_rotation),
                     'scale': list(instance.scale),
                 }
