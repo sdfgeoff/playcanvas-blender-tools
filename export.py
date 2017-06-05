@@ -391,6 +391,12 @@ class MeshParser(dict):
 
         uv_layers = mesh.uv_layers
         uvdata = {i: numverts*2*[None].copy() for i in uv_layers.keys()}
+
+        col_layer = mesh.vertex_colors.active_index
+        col_data = mesh.vertex_colors[col_layer].data if col_layer != -1 else None
+        vertcollist = numverts*4*[None] if col_layer != -1 else None
+
+
         for loop in mesh.loops:
             vert = mesh.vertices[loop.vertex_index]
             self['indices'].append(loop.index)
@@ -408,6 +414,13 @@ class MeshParser(dict):
             vertnormallist[3*loop.index+1] = normal.y
             vertnormallist[3*loop.index+2] = normal.z
 
+            if col_data is not None:
+                col = col_data[loop.index].color
+                vertcollist[4*loop.index] = int(col[0] * 256)
+                vertcollist[4*loop.index+1] = int(col[1] * 256)
+                vertcollist[4*loop.index+2] = int(col[2] * 256)
+                vertcollist[4*loop.index+3] = 256
+
         self.vert_data = {
             'position': {
                 'type': 'float32',
@@ -420,6 +433,13 @@ class MeshParser(dict):
                 'data': vertnormallist
             },
         }
+        if vertcollist is not None:
+            self.vert_data['color'] = {
+                'type': 'uint8',
+                'components': 4,
+                'data': vertcollist
+            }
+
         for uv_name in uvdata:
             uv_index = self.uv_list.index(uv_name)
             self.vert_data['texCoord{}'.format(uv_index)] = {
