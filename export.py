@@ -416,10 +416,10 @@ class MeshParser(dict):
 
             if col_data is not None:
                 col = col_data[loop.index].color
-                vertcollist[4*loop.index] = int(col[0] * 256)
-                vertcollist[4*loop.index+1] = int(col[1] * 256)
-                vertcollist[4*loop.index+2] = int(col[2] * 256)
-                vertcollist[4*loop.index+3] = 256
+                vertcollist[4*loop.index] = int(col.r * 255)
+                vertcollist[4*loop.index+1] = int(col.g * 255)
+                vertcollist[4*loop.index+2] = int(col.b * 255)
+                vertcollist[4*loop.index+3] = 255
 
         self.vert_data = {
             'position': {
@@ -525,6 +525,14 @@ class MaterialExporter(dict):
         self['specular'] = list(spec_color)
         self['emissive'] = list(emit_color)
 
+        if mat.game_settings.alpha_blend == 'ADD':
+            self["blendType"] = 1
+
+        if mat.use_vertex_color_paint:
+            self['diffuseMapVertexColor'] = True
+        if mat.use_vertex_color_light:
+            self['emissiveMapVertexColor'] = True
+
         if mat.alpha != 1.0:
             self['opacity'] = mat.alpha
 
@@ -562,6 +570,11 @@ class MaterialExporter(dict):
             if tex.use_map_color_spec:
                 self['specularMap'] = image_path
                 self['specularMapUv'] = uv_layer
+            if tex.use_map_alpha:
+                if tex.use_rgb_to_intensity:
+                    self['opacityMapChannel'] = 'rgb'
+                self['opacityMap'] = image_path
+                self['opacityMapUv'] = uv_layer
             if tex.use_map_normal:
                 self['normalMap'] = image_path
                 self['bumpMapFactor'] = tex.normal_factor
